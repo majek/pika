@@ -2,6 +2,7 @@ import pika.spec as spec
 import pika.codec as codec
 import pika.event as event
 from pika.exceptions import *
+import sys
 
 class ChannelHandler:
     def __init__(self, connection, channel_number = None):
@@ -10,6 +11,7 @@ class ChannelHandler:
         self.frame_handler = self._handle_method
         self.channel_close = None
         self.async_map = {}
+        self.blocking = False
 
         self.channel_state_change_event = event.Event()
 
@@ -38,11 +40,23 @@ class ChannelHandler:
         self.channel_state_change_event.addHandler(handler, key)
         handler(self, not self.channel_close)
 
+    def flush_inbound(self):
+        while self.inbound:
+            method_frame, header_frame, body = self.inbound.pop(0)
+            method = method_frame.method
+            if method.__class__ in self.async_map:
+                self.async_map[method.__class__](method_frame, header_frame, body)
+            else:
+                sys.stderr.write("unknown method in this context! %r %r %r\n" \
+                                % (method_frame, header_frame, body))
+
     def wait_for_reply(self, acceptable_replies):
         if not acceptable_replies:
             # One-way.
             return
         index = 0
+
+        self.blocking = True # don't deliver anything.
         while True:
             self._ensure()
             while index >= len(self.inbound):
@@ -52,16 +66,22 @@ class ChannelHandler:
                 if isinstance(frame, codec.FrameMethod):
                     reply = frame.method
                     if reply.__class__ in acceptable_replies:
-                        (hframe, body) = self.inbound[index][1:3]
-                        if hframe is not None:
-                            reply._set_content(hframe.properties, body)
-                        self.inbound[index:index+1] = []
-                        return reply
+                        (mframe, hframe, body) = self.inbound[index]
+                        self.inbound[index:index+1] = [] # pop that item
+                        self.blocking = False
+                        self.connection.delayed_call(0.0, self.flush_inbound)
+                        if mframe.method.__class__ in self.async_map:
+                            self.async_map[mframe.method.__class__](mframe, hframe, body)
+                            return
+                        else:
+                            if hframe is not None:
+                                reply._set_content(hframe.properties, body)
+                            return reply
                 index = index + 1
 
     def _handle_async(self, method_frame, header_frame, body):
         method = method_frame.method
-        if method.__class__ in self.async_map:
+        if method.__class__ in self.async_map and not self.blocking:
             self.async_map[method.__class__](method_frame, header_frame, body)
         else:
             self.inbound.append((method_frame, header_frame, body))
@@ -115,6 +135,7 @@ class Channel(spec.DriverMixin):
         self.handler = handler
         self.callbacks = {}
         self.next_consumer_tag = 0
+        self.flow_lock = False
 
         handler.async_map[spec.Channel.Close] = handler._async_channel_close
 
@@ -137,7 +158,11 @@ class Channel(spec.DriverMixin):
         raise "Unimplemented"
 
     def _async_channel_flow(self, method_frame, header_frame, body):
-        raise "Unimplemented"
+        if method_frame.method.active is False:
+            self.flow_lock = True
+        else:
+            self.flow_lock = False
+        sys.stderr.write("channel.flow lock = %r\n" % (self.flow_lock,))
 
     def close(self, code = 0, text = 'Normal close'):
         c = spec.Channel.Close(reply_code = code,
@@ -148,6 +173,9 @@ class Channel(spec.DriverMixin):
         self.handler._set_channel_close(c)
 
     def basic_publish(self, exchange, routing_key, body, properties = None, mandatory = False, immediate = False):
+        while self.flow_lock is True:
+            self.handler.wait_for_reply([spec.Channel.Flow])
+
         properties = properties or spec.BasicProperties()
         self.handler.connection.send_method(self.handler.channel_number,
                                             spec.Basic.Publish(exchange = exchange,

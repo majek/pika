@@ -247,7 +247,11 @@ class Connection:
         marshalled_frame = frame.marshal()
         self.bytes_sent = self.bytes_sent + len(marshalled_frame)
         self.outbound_buffer.write(marshalled_frame)
-        #print 'Wrote %r' % (frame, )
+        if getattr(self, '_do_send', None):
+            self._do_send()
+
+    def writable(self):
+        return bool(self.outbound_buffer)
 
     def send_method(self, channel_number, method, content = None):
         self.send_frame(codec.FrameMethod(channel_number, method))

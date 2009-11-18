@@ -12,3 +12,6 @@ asyncore_loop = pika.asyncore_adapter.loop
 
 from pika.blocking_adapter import \
     BlockingConnection
+
+from pika.poll_adapter import \
+    PollReactor
