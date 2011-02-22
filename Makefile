@@ -4,6 +4,7 @@ AMQP_SPEC_JSON_FILES=$(AMQP_CODEGEN_DIR)/amqp-rabbitmq-0.9.1.json
 TEMP=$(shell ./versions.py)
 VERSIONS=$(foreach version, $(TEMP),$(version))
 PYTHON=$(word 1, ${VERSIONS})
+LAST_VERSION=$(shell git describe --tags --match v0* --abbrev=0)
 
 all:
 	@echo "\nRun "make install" or \"python setup.py install\" to install Pika\n"
@@ -46,7 +47,7 @@ documentation:
 	$(MAKE) -C docs html
 
 push_documentation: documentation
-	git commit docs
+	git commit docs/*.rst docs/*.py
 	git clone git@github.com:tonyg/pika.git -b gh-pages gh-pages
 	cd gh-pages && git rm -rf *
 	cp -R docs/_build/html/* gh-pages
@@ -59,3 +60,48 @@ install:
 	$(PYTHON) setup.py install
 
 sandbox: pika/spec.py test documentation
+	echo "Sandbox created"
+
+distribution:
+    # Example:
+    #  make distribution VERSION=0.9.4
+	echo "Building $(VERSION)"
+	
+	# Tag the version
+	git tag v$(VERSION)
+	git push origin v$(VERSION)
+	
+	# Make the dist build dir
+	mkdir -p dist/pika-$(VERSION)
+	
+	# Extract the tag and build the dist dir
+	git archive --format=tar v$(VERSION)  | tar -x -C dist/pika-$(VERSION)
+	#rm dist/pika-$(VERSION)/.gitignore
+	
+	# Replace the version where we have palceholders
+	sed -i 's/__VERSION_STRING__/$(VERSION)/g' dist/pika-$(VERSION)/setup.py dist/pika-$(VERSION)/docs/*
+	
+	# Make the tarball
+	cd dist && tar cfvz pika-$(VERSION).tar.gz pika-$(VERSION)/* --exclude=pika-$(VERSION)/.gitignore 
+	
+	# Update the MD5 checksum in the documentation
+	sed -i "s/__MD5_CHECKSUM__/$$(md5sum dist/pika-$(VERSION).tar.gz | awk {'print $$1'})/g" dist/pika-$(VERSION)/docs/index.rst
+	
+	# Make and push the documentation with the new version info
+	$(MAKE) -C dist/pika-$(VERSION)/docs html
+	git clone git@github.com:tonyg/pika.git -b gh-pages gh-pages
+	cd gh-pages && git rm -rf *
+	cp -R dist/pika-$(VERSION)/docs/_build/html/* gh-pages
+	cd gh-pages && git add -A
+	cd gh-pages && git commit -m 'Update documentation from master' -a
+	cd gh-pages && git push
+	rm -r gh-pages
+	
+	# Build the PKG-INFO file for uploading to pypi
+	cd dist/pika-$(VERSION) && python setup.py sdist && cp pika.egg-info/PKG-INFO ../
+
+ 	# Remove the build directory
+	rm -r dist/pika-$(VERSION)
+	
+	# Output for changelog
+	git shortlog --no-merges v$(VERSION) ^$(LAST_VERSION) | cat

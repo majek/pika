@@ -27,18 +27,19 @@ or::
 
 Or you can directly install from GitHub with pip::
 
-    pip install -e git+git://github.com/tonyg/pika.git@v0.9.1a#egg=pika-v0.9.1a
+    pip install -e git+git://github.com/tonyg/pika.git@v__VERSION_STRING__#egg=pika-v__VERSION_STRING__
 
 You may also download the source for this version as a zip or tar.gz with the following URLs:
 
-- https://github.com/tonyg/pika/tarball/v0.9.1a
-- https://github.com/tonyg/pika/zipball/v0.9.1a
+ - http://pypi.python.org/packages/source/p/pika/pika-__VERSION_STRING__.tar.gz
+
+   MD5 File Signature: __MD5_CHECKSUM__
 
 To install from source, run "python setup.py install" in the root source directory.
 
 Using Pika
 ----------
-Pika 0.9a is a major refactor of the Pika library implementing true asynchronous behavior at its core. It is important to understand asynchronous programming concepts to properly use Pika in your application. If you have previously used :py:meth:`~channel.Channel.basic_consume` in an application with Pika v0.5.2 or earlier, you have already implemented continuation-passing style asynchronous code with Pika.
+Pika |version| is a major refactor of the Pika library implementing true asynchronous behavior at its core. It is important to understand asynchronous programming concepts to properly use Pika in your application. If you have previously used :py:meth:`~channel.Channel.basic_consume` in an application with Pika v0.5.2 or earlier, you have already implemented continuation-passing style asynchronous code with Pika.
 
 .. toctree::
    :maxdepth: 2
